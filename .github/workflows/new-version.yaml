@@ -1,0 +1,54 @@
+---
+name: New version
+run-name: New version ${{ inputs.next_version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      next_version:
+        required: true
+        type: string
+        description: 'Version number'
+
+permissions:
+  contents: write
+
+jobs:
+  new_release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed to allow git pushes
+
+      - name: Configure git
+        run: |
+          git config --local user.email "github-actions@github.com"
+          git config --local user.name "GitHub Actions"
+
+      - name: Extract current version
+        run: |
+          git switch main
+          echo "CURRENT_VERSION=$(jq -r '.version' version.json)" >> $GITHUB_OUTPUT
+        id: version
+
+      - name: Create Release Branch
+        run: |
+          git switch -c release/${{ steps.version.outputs.CURRENT_VERSION }}
+          git push --set-upstream origin release/${{ steps.version.outputs.CURRENT_VERSION }}
+
+      - name: Prepare for next release
+        run: |
+          git switch main
+          echo "{\"version\":\"${{ inputs.next_version }}\"}" > version.json
+          git add version.json
+          git commit -m "prepare for next release ${{ inputs.next_version }}"
+          git push
+
+      - name: Draft release
+        run: gh release create ${{ steps.version.outputs.CURRENT_VERSION }} --generate-notes --draft
+        env:
+          VERSION: ${{ inputs.next_version }}
+          GH_TOKEN: ${{ github.token }}
